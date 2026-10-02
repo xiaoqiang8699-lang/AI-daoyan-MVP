@@ -1,0 +1,29 @@
+name: ai-director
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+  redis-smoke:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6381:6379"
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ai_director
+      POSTGRES_PASSWORD: ai_director_dev
+      POSTGRES_DB: ai_director
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - ai_director_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_director -d ai_director"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  ai_director_postgres:

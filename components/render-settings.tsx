@@ -1,0 +1,11 @@
+"use client";
+import { useEffect, useState } from "react";
+type State = { subtitleEnabled: boolean; bgmEnabled: boolean; bgmTrackId: string | null; bgmVolume: number };
+type Track = { id: string; name: string; category: string; licenseNote: string };
+export function RenderSettings({ projectId }: { projectId: string }) {
+  const [state, setState] = useState<State | null>(null); const [tracks, setTracks] = useState<Track[]>([]); const [saved, setSaved] = useState(false);
+  useEffect(() => { void fetch(`/api/projects/${projectId}/render-settings`).then((r) => r.json()).then((data) => { setState(data.settings); setTracks(data.tracks || []); }); }, [projectId]);
+  if (!state) return null;
+  async function save(next = state) { setState(next); setSaved(false); const response = await fetch(`/api/projects/${projectId}/render-settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) }); if (response.ok) setSaved(true); }
+  return <section className="mt-5 rounded-2xl border border-border bg-card p-5"><h2 className="font-semibold">成片设置</h2><label className="mt-4 flex items-center justify-between text-sm">自动字幕 <input type="checkbox" checked={state.subtitleEnabled} onChange={(e) => void save({ ...state, subtitleEnabled: e.target.checked })} /></label><div className="mt-5 text-sm font-medium">背景音乐</div><label className="mt-2 flex items-center gap-2 text-sm"><input type="radio" checked={!state.bgmEnabled} onChange={() => void save({ ...state, bgmEnabled: false, bgmTrackId: null })} />不使用音乐</label>{tracks.map((track) => <label key={track.id} className="mt-2 flex items-center gap-2 text-sm"><input type="radio" checked={state.bgmEnabled && state.bgmTrackId === track.id} onChange={() => void save({ ...state, bgmEnabled: true, bgmTrackId: track.id })} />{track.name}<span className="text-xs text-muted-foreground">{track.licenseNote}</span></label>)}<div className="mt-4 flex items-center gap-3 text-sm">音乐音量 <input type="range" min="0.1" max="0.18" step="0.01" value={state.bgmVolume} disabled={!state.bgmEnabled} onChange={(e) => setState({ ...state, bgmVolume: Number(e.target.value) })} onMouseUp={() => void save()} />{Math.round(state.bgmVolume * 100)}%</div>{saved && <p className="mt-3 text-xs text-muted-foreground">设置已保存，重新生成后生效。</p>}</section>;
+}

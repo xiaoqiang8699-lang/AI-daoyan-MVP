@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400" role="img" aria-label="咖啡拍摄示例 3">
+<defs><linearGradient id="light" x2="1" y2="1"><stop stop-color="#d9e1d9"/><stop offset="1" stop-color="#f6f1e6"/></linearGradient><radialGradient id="coffee"><stop stop-color="#856249"/><stop offset="1" stop-color="#4b382b"/></radialGradient></defs>
+<rect width="640" height="400" fill="url(#light)"/><path d="M390 0H640V290H390z" fill="#f4f4e9" opacity=".6"/><path d="M515 0V270M390 116H640" stroke="#c3c6b6" stroke-width="12"/><path d="M0 300L640 215V400H0z" fill="#cfb893"/><path d="M435 0L183 400H410L640 92V0z" fill="#fffcec" opacity=".28"/><ellipse cx="325" cy="332" rx="112" ry="21" fill="#766753" opacity=".14"/>
+<path d="M392 215C466 188 470 301 395 289" fill="none" stroke="#efeee1" stroke-width="22"/><path d="M244 207H407L391 309Q326 347 259 309z" fill="#f4f2e6"/><ellipse cx="326" cy="208" rx="82" ry="29" fill="#fffcef"/><ellipse cx="326" cy="209" rx="68" ry="21" fill="url(#coffee)"/><path d="M277 239L283 298" stroke="#fffdf6" stroke-width="9" opacity=".7" stroke-linecap="round"/>
+
+<path d="M425 84L478 93L470 132L425 149L389 137L371 163L354 153L379 112z" fill="#748475"/><path d="M361 157Q340 178 329 204" fill="none" stroke="#f3f5e6" stroke-width="7" opacity=".9"/>
+
+<path d="M70 263Q88 170 118 146M91 209Q46 197 58 177Q82 174 91 209M108 172Q147 161 137 140Q112 142 108 172" fill="#74836a" stroke="#74836a" stroke-width="4"/><path d="M45 258H113L103 312H54z" fill="#b7b295"/>
+</svg>

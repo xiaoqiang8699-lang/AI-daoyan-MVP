@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.next-smoke/
+.env
+.env.*
+!.env.example
+generated/
+*.tsbuildinfo
+*.log
+test-results/
+storage/
+.cert/

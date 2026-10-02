@@ -1,0 +1,724 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProjectStatus {
+  DRAFT
+  ANALYZING
+  ANALYSIS_FAILED
+  READY_TO_SHOOT
+  SHOOTING
+  COMPLETED
+}
+
+enum ShotStatus {
+  PENDING
+  READY
+  SHOOTING
+  PASSED
+}
+
+enum TakeStatus {
+  UPLOADED
+  EVALUATING
+  PASSED
+  REJECTED
+}
+
+enum FinalVideoStatus {
+  PENDING
+  RENDERING
+  READY
+  FAILED
+}
+
+enum SubtitleStatus {
+  PENDING
+  TRANSCRIBING
+  READY
+  NO_SPEECH
+  FAILED
+}
+
+enum FinalQaStatus {
+  PENDING
+  CHECKING
+  PASSED
+  ISSUES
+  FAILED
+}
+
+enum TalentMode {
+  SELF
+  OTHER_PERSON
+  PRODUCT_ONLY
+}
+
+enum ShootingPlanStatus {
+  GENERATING
+  READY
+  FAILED
+}
+
+enum PlannedShotDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum CaptureStatus {
+  NOT_STARTED
+  CAPTURED
+  SKIPPED
+}
+
+enum EvaluationStatus {
+  PENDING
+  EVALUATING
+  PASSED
+  NEEDS_RETAKE
+  FAILED
+}
+
+enum TakeAcceptanceStatus {
+  NOT_ACCEPTED
+  AI_PASSED
+  USER_ACCEPTED
+}
+
+enum TrimSource {
+  AUTO
+  USER
+  FULL_TAKE
+}
+
+enum TesterType {
+  SHOP_OWNER
+  ECOMMERCE_SELLER
+  CREATOR
+  PERSONAL_IP
+  OTHER
+}
+enum ExperienceLevel {
+  BEGINNER
+  INTERMEDIATE
+  EXPERIENCED
+}
+enum UserTestStatus {
+  STARTED
+  DROPPED
+  COMPLETED
+}
+enum PricingVariant {
+  A
+  B
+  C
+}
+enum FeedbackStage {
+  REFERENCE
+  BRIEF
+  PLAN
+  SHOOT
+  EVALUATION
+  RENDER
+  RESULT
+  PRICING
+}
+enum FeedbackCategory {
+  CONFUSING
+  AI_INCORRECT
+  ERROR
+  SLOW
+  OTHER
+}
+
+enum EvaluationCriticalIssue {
+  SUBJECT_MISSING
+  KEY_ACTION_MISSING
+  PRODUCT_NOT_VISIBLE
+  SEVERELY_OUT_OF_FRAME
+  UNUSABLE_VISIBILITY
+  WRONG_SHOT_CONTENT
+}
+
+enum MaterialBatchStatus {
+  UPLOADING
+  READY
+  ANALYZING
+  ANALYZED
+  FAILED
+}
+enum MaterialType {
+  VIDEO
+  IMAGE
+}
+enum MaterialAssetStatus {
+  UPLOADING
+  READY
+  ANALYZING
+  ANALYZED
+  FAILED
+}
+enum CapturedAtSource {
+  MEDIA_METADATA
+  USER_UPLOAD
+  UNKNOWN
+}
+enum MaterialVisualQuality {
+  GOOD
+  USABLE
+  POOR
+}
+enum ContentType {
+  PRODUCT
+  DAILY_VLOG
+  STORY
+  KNOWLEDGE
+  BEHIND_THE_SCENES
+  OTHER
+}
+enum ContentOpportunityStatus {
+  READY
+  NEEDS_MORE_MATERIAL
+  SELECTED
+  IN_PROGRESS
+  COMPLETED
+  DISMISSED
+  OUTDATED
+}
+enum OpportunitySegmentRole {
+  HOOK
+  CONTEXT
+  ACTION
+  DETAIL
+  REACTION
+  PROOF
+  ENDING
+}
+enum DiscoveryGoal {
+  EXPLORE
+  PRODUCT
+  PERSONAL_IP
+  DAILY_VLOG
+}
+
+model User {
+  id        String    @id @default(cuid())
+  name      String
+  email     String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  projects  Project[]
+  productEvents ProductEvent[]
+  testSessions UserTestSession[]
+  feedback UserFeedback[]
+  usageLedger UsageLedger[]
+  materialBatches MaterialBatch[]
+}
+
+model MaterialBatch {
+  id String @id @default(cuid())
+  userId String
+  businessDate DateTime
+  status MaterialBatchStatus @default(UPLOADING)
+  goal DiscoveryGoal @default(EXPLORE)
+  analysisStartedAt DateTime?
+  analysisCompletedAt DateTime?
+  errorMessage String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets MaterialAsset[]
+  events StoryEvent[]
+  opportunities ContentOpportunity[]
+  @@index([userId, businessDate])
+}
+model MaterialAsset {
+  id String @id @default(cuid())
+  batchId String
+  type MaterialType
+  storageKey String @unique
+  fileUrl String
+  mimeType String
+  fileSize Int
+  duration Float?
+  width Int?
+  height Int?
+  capturedAt DateTime?
+  capturedAtSource CapturedAtSource @default(USER_UPLOAD)
+  thumbnailStorageKey String?
+  thumbnailUrl String?
+  analysisStatus MaterialAssetStatus @default(UPLOADING)
+  analysisError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  batch MaterialBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  analysis MaterialAnalysis?
+  eventMaterials EventMaterial[]
+  segments OpportunitySegment[]
+  @@index([batchId, createdAt])
+}
+model MaterialAnalysis {
+  id String @id @default(cuid())
+  materialAssetId String @unique
+  summary String
+  scene String?
+  activity String?
+  objects Json?
+  topics Json?
+  speechSummary String?
+  visualQuality MaterialVisualQuality
+  storyPotential Int
+  confidence Float
+  rawResult Json?
+  provider String
+  model String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  asset MaterialAsset @relation(fields: [materialAssetId], references: [id], onDelete: Cascade)
+}
+model StoryEvent {
+  id String @id @default(cuid())
+  batchId String
+  title String
+  summary String
+  startedAt DateTime?
+  endedAt DateTime?
+  confidence Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  batch MaterialBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  materials EventMaterial[]
+  opportunities ContentOpportunity[]
+  @@index([batchId, createdAt])
+}
+model EventMaterial {
+  eventId String
+  materialAssetId String
+  relevanceScore Float
+  event StoryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  asset MaterialAsset @relation(fields: [materialAssetId], references: [id], onDelete: Cascade)
+  @@id([eventId, materialAssetId])
+}
+model ContentOpportunity {
+  id String @id @default(cuid())
+  batchId String
+  storyEventId String?
+  title String
+  contentType ContentType
+  angle String
+  summary String
+  hook String
+  targetDuration Float
+  sufficiencyScore Int
+  status ContentOpportunityStatus
+  reason String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  batch MaterialBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  storyEvent StoryEvent? @relation(fields: [storyEventId], references: [id], onDelete: SetNull)
+  segments OpportunitySegment[]
+  missingMaterials MissingMaterialRequest[]
+  @@index([batchId, status])
+}
+model OpportunitySegment {
+  id String @id @default(cuid())
+  opportunityId String
+  order Int
+  materialAssetId String?
+  role OpportunitySegmentRole
+  suggestedStart Float?
+  suggestedEnd Float?
+  description String
+  createdAt DateTime @default(now())
+  opportunity ContentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  materialAsset MaterialAsset? @relation(fields: [materialAssetId], references: [id], onDelete: SetNull)
+  @@unique([opportunityId, order])
+}
+model MissingMaterialRequest {
+  id String @id @default(cuid())
+  opportunityId String
+  order Int
+  purpose String
+  actionInstruction String
+  cameraInstruction String
+  targetDuration Float
+  reason String
+  required Boolean @default(true)
+  createdAt DateTime @default(now())
+  opportunity ContentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  @@unique([opportunityId, order])
+}
+
+model Project {
+  id             String         @id @default(cuid())
+  userId         String
+  name           String
+  status         ProjectStatus  @default(DRAFT)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  analysisError  String?
+  analysisToken  String?
+  analysisStartedAt DateTime?
+  analysisProvider String?
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referenceVideo ReferenceVideo?
+  shots          Shot[]
+  shootingBrief  ShootingBrief?
+  shootingPlan   ShootingPlan?
+  finalVideo     FinalVideo?
+  renderSettings VideoRenderSettings?
+  subtitleTracks SubtitleTrack[]
+  productEvents ProductEvent[]
+  testSession UserTestSession?
+  feedback UserFeedback[]
+  usageLedger UsageLedger[]
+
+  @@index([userId, createdAt])
+}
+
+model ProductEvent {
+  id String @id @default(cuid())
+  userId String
+  projectId String?
+  sessionId String?
+  eventName String
+  eventData Json?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  session UserTestSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  @@index([eventName, createdAt])
+  @@index([projectId, createdAt])
+  @@index([sessionId, createdAt])
+}
+
+model UserTestSession {
+  id String @id @default(cuid())
+  userId String
+  projectId String? @unique
+  testerLabel String
+  testerType TesterType
+  experienceLevel ExperienceLevel
+  intendedContent String
+  status UserTestStatus @default(STARTED)
+  pricingVariant PricingVariant @default(B)
+  selectedPlan String?
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  observerNotes String?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  events ProductEvent[]
+  feedback TestFeedback?
+  @@index([status, startedAt])
+}
+
+model TestFeedback {
+  id String @id @default(cuid())
+  testSessionId String @unique
+  priorAbility String
+  mostHelpful String
+  mostDifficult String
+  reuseIntent String
+  publishIntent String
+  dissatisfaction String?
+  recommendScore Int?
+  createdAt DateTime @default(now())
+  session UserTestSession @relation(fields: [testSessionId], references: [id], onDelete: Cascade)
+}
+
+model UserFeedback {
+  id String @id @default(cuid())
+  userId String
+  projectId String?
+  stage FeedbackStage
+  category FeedbackCategory
+  message String?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([projectId, createdAt])
+}
+
+model UsageLedger {
+  id String @id @default(cuid())
+  projectId String?
+  userId String
+  operation String
+  provider String
+  model String?
+  inputUnits Float?
+  outputUnits Float?
+  credits Float?
+  currencyCost Float?
+  durationMs Int?
+  createdAt DateTime @default(now())
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([projectId, createdAt])
+  @@index([provider, operation, createdAt])
+}
+
+model ReferenceVideo {
+  id        String   @id @default(cuid())
+  projectId String   @unique
+  fileUrl   String
+  duration  Float
+  storageKey String?
+  originalName String?
+  mimeType  String?
+  size      Int?
+  width     Int?
+  height    Int?
+  fps       Float?
+  codec     String?
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Shot {
+  id                String     @id @default(cuid())
+  projectId         String
+  order             Int
+  startTime         Float
+  endTime           Float
+  targetDuration    Float
+  referenceFrameUrl  String?
+  shotSize          String
+  cameraMovement    String
+  visualDescription String @default("")
+  actionInstruction String
+  cameraInstruction String
+  dialogue          String?
+  status            ShotStatus @default(PENDING)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  project           Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  plannedShots      PlannedShot[]
+
+  @@unique([projectId, order])
+}
+
+model ShootingBrief {
+  id                String     @id @default(cuid())
+  projectId         String     @unique
+  subject           String
+  talentMode        TalentMode
+  location          String
+  goal              String     @default("保留参考视频的节奏和拍法，把内容改成适合我的版本。")
+  additionalContext String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  project           Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  shootingPlan      ShootingPlan?
+}
+
+model ShootingPlan {
+  id              String             @id @default(cuid())
+  projectId       String             @unique
+  briefId         String             @unique
+  status          ShootingPlanStatus @default(GENERATING)
+  generationError String?
+  generationToken String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  project         Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  brief           ShootingBrief      @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  shots           PlannedShot[]
+}
+
+model PlannedShot {
+  id                String                @id @default(cuid())
+  shootingPlanId    String
+  referenceShotId   String
+  order             Int
+  purpose           String
+  actionInstruction String
+  cameraInstruction String
+  dialogue          String?
+  targetDuration    Float
+  difficulty        PlannedShotDifficulty
+  notes             String?
+  captureStatus     CaptureStatus           @default(NOT_STARTED)
+  selectedTakeId    String?                 @unique
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  shootingPlan      ShootingPlan          @relation(fields: [shootingPlanId], references: [id], onDelete: Cascade)
+  referenceShot     Shot                  @relation(fields: [referenceShotId], references: [id], onDelete: Cascade)
+  takes             Take[]                @relation("PlannedShotTakes")
+  selectedTake      Take?                 @relation("SelectedPlannedShotTake", fields: [selectedTakeId], references: [id], onDelete: SetNull)
+
+  @@unique([shootingPlanId, order])
+  @@unique([shootingPlanId, referenceShotId])
+  @@index([referenceShotId])
+}
+
+model Take {
+  id               String               @id @default(cuid())
+  plannedShotId    String
+  videoUrl         String
+  duration         Float
+  width            Int
+  height           Int
+  mimeType         String
+  fileSize         Int
+  status           TakeStatus           @default(UPLOADED)
+  acceptanceStatus TakeAcceptanceStatus @default(NOT_ACCEPTED)
+  createdAt        DateTime             @default(now())
+  plannedShot      PlannedShot          @relation("PlannedShotTakes", fields: [plannedShotId], references: [id], onDelete: Cascade)
+  selectedBy       PlannedShot?         @relation("SelectedPlannedShotTake")
+  evaluation       Evaluation?
+  trimDecision     TrimDecision?
+
+  @@index([plannedShotId, createdAt])
+}
+
+model TrimDecision {
+  id                 String     @id @default(cuid())
+  takeId             String     @unique
+  startTime          Float
+  endTime            Float
+  trimmedDuration    Float
+  source             TrimSource
+  confidence         Float?
+  reason             String?
+  actionStartTime    Float?
+  actionEndTime      Float?
+  analysisDurationMs Int?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  take               Take       @relation(fields: [takeId], references: [id], onDelete: Cascade)
+}
+
+model Evaluation {
+  id               String                    @id @default(cuid())
+  takeId           String                    @unique
+  status           EvaluationStatus          @default(PENDING)
+  passed           Boolean?
+  score            Int?
+  overallScore     Int?
+  framingScore     Int?
+  actionScore      Int?
+  movementScore    Int?
+  timingScore      Int?
+  visibilityScore  Int?
+  criticalIssues   EvaluationCriticalIssue[] @default([])
+  mainIssueCode    String?
+  mainIssue        String?
+  /// 只保存一条最重要的修改建议，不存建议数组。
+  advice           String?
+  confidence       Float?
+  evidence         String?
+  issueStartTime   Float?
+  issueEndTime     Float?
+  provider         String?
+  model            String?
+  error            String?
+  evaluationToken  String?                   @unique
+  rawResult        Json?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  evaluatedAt      DateTime?
+  take             Take                      @relation(fields: [takeId], references: [id], onDelete: Cascade)
+}
+
+model FinalVideo {
+  id             String           @id @default(cuid())
+  projectId      String           @unique
+  fileUrl        String?
+  storageKey     String?
+  status         FinalVideoStatus @default(PENDING)
+  duration       Float?
+  width          Int?
+  height         Int?
+  fps            Float?
+  codec          String?
+  fileSize       Int?
+  sourceSnapshot Json?
+  errorMessage   String?
+  renderToken    String?          @unique
+  renderDurationMs Int?
+  baseFileUrl      String?
+  baseStorageKey   String?
+  baseDuration     Float?
+  enhancedFileUrl  String?
+  enhancedStorageKey String?
+  enhancedDuration Float?
+  enhancedFileSize Int?
+  subtitleTrack    SubtitleTrack?
+  finalQa          FinalVideoQA?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model VideoRenderSettings {
+  id                  String   @id @default(cuid())
+  projectId           String   @unique
+  subtitleEnabled     Boolean  @default(true)
+  bgmEnabled          Boolean  @default(false)
+  bgmTrackId          String?
+  bgmVolume           Float    @default(0.14)
+  originalAudioVolume Float    @default(1)
+  version             Int      @default(1)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  bgmTrack            BgmTrack? @relation(fields: [bgmTrackId], references: [id], onDelete: SetNull)
+}
+
+model BgmTrack {
+  id          String   @id @default(cuid())
+  name        String
+  fileUrl     String
+  storageKey  String   @unique
+  duration    Float
+  category    String
+  licenseNote String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  settings    VideoRenderSettings[]
+}
+
+model SubtitleTrack {
+  id                      String         @id @default(cuid())
+  projectId               String
+  finalVideoId            String         @unique
+  status                  SubtitleStatus @default(PENDING)
+  language                String?
+  segments                Json?
+  provider                String?
+  model                   String?
+  transcriptionDurationMs Int?
+  errorMessage            String?
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  project                 Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  finalVideo              FinalVideo     @relation(fields: [finalVideoId], references: [id], onDelete: Cascade)
+}
+
+model FinalVideoQA {
+  id                String        @id @default(cuid())
+  finalVideoId      String        @unique
+  status            FinalQaStatus @default(PENDING)
+  passed            Boolean?
+  criticalIssues    String[]      @default([])
+  mainIssue         String?
+  advice            String?
+  confidence        Float?
+  provider          String?
+  model             String?
+  programChecks     Json?
+  finalQaDurationMs Int?
+  errorMessage      String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  finalVideo        FinalVideo    @relation(fields: [finalVideoId], references: [id], onDelete: Cascade)
+}

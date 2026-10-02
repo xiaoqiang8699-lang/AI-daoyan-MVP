@@ -1,0 +1,12 @@
+import Link from "next/link";
+import { Compass, Film, Plus } from "lucide-react";
+import { WorkspacePageHeader } from "@/components/workspace/workspace-page-header";
+import { EmptyWorkspace } from "@/components/workspace/workspace-cards";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { getLatestMaterialBatch } from "@/lib/materials";
+
+export default async function OpportunitiesPage() {
+  const batch = await getLatestMaterialBatch(); const opportunities = batch?.opportunities.filter((item) => item.status !== "DISMISSED") || [];
+  return <div className="mx-auto max-w-6xl p-5 sm:p-8 lg:p-10"><WorkspacePageHeader title="内容机会" description="AI 从你的素材里发现值得制作的故事。" action={false} /><div className="mb-6 flex flex-wrap gap-2 text-sm">{["今日推荐", "稍后制作", "需要补拍", "已完成"].map((item, index) => <span key={item} className={`rounded-full px-3 py-1.5 ${index === 0 ? "bg-primary text-white" : "bg-white text-muted-foreground"}`}>{item}</span>)}</div>{opportunities.length ? <div className="grid gap-4 lg:grid-cols-2">{opportunities.slice(0, 3).map((item) => <Card key={item.id}><CardContent><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-medium text-primary">{item.status === "READY" ? "可以制作" : item.status === "NEEDS_MORE_MATERIAL" ? "需要补一条" : item.status === "OUTDATED" ? "素材已变化" : "已选择"}</p><h2 className="mt-2 font-semibold">{item.title}</h2></div><Film className="size-5 text-primary" /></div><p className="mt-3 text-sm leading-6 text-muted-foreground">{item.summary}</p><p className="mt-3 rounded-lg bg-workspace-soft p-3 text-sm">{item.reason}</p>{item.status === "NEEDS_MORE_MATERIAL" ? <div className="mt-4"><p className="text-sm font-medium">建议补拍</p>{item.missingMaterials.map((missing) => <p key={missing.id} className="mt-2 text-sm text-muted-foreground">{missing.actionInstruction} {missing.cameraInstruction}</p>)}</div> : null}<div className="mt-5 flex gap-2"><Button asChild size="sm"><Link href={`/workspace/opportunities/${item.id}`}>查看方案</Link></Button>{item.status === "READY" ? <Button asChild size="sm" variant="outline"><Link href={`/workspace/materials?batch=${batch?.id}`}><Plus />继续添加素材</Link></Button> : null}</div></CardContent></Card>)}</div> : <EmptyWorkspace title="还没有发现内容机会" description="添加今天的素材后，AI 会在这里给你建议。" action={<Button asChild><Link href="/workspace/materials"><Compass />添加今日素材</Link></Button>} />}</div>;
+}

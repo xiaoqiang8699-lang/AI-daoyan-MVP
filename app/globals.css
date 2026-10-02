@@ -1,0 +1,39 @@
+@import "tailwindcss" source(none);
+@source "../app";
+@source "../components";
+
+:root {
+  --background: #f8f8f4;
+  --foreground: #242731;
+  --card: #ffffff;
+  --primary: #5553d8;
+  --primary-foreground: #ffffff;
+  --muted: #eeeee8;
+  --muted-foreground: #6b6f76;
+  --border: #e4e5dc;
+  --ring: #5553d8;
+  --workspace: #f7f7fb;
+  --workspace-soft: #f1f0ff;
+  --workspace-border: #e7e7ef;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-workspace: var(--workspace);
+  --color-workspace-soft: var(--workspace-soft);
+  --color-workspace-border: var(--workspace-border);
+  --font-sans: Arial, "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+body { margin: 0; background: var(--background); color: var(--foreground); }
+button, a, input { -webkit-tap-highlight-color: transparent; }
+button:not(:disabled), a { cursor: pointer; }
+::selection { background: #dcddff; }

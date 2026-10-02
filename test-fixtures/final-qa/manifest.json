@@ -1,0 +1,27 @@
+{
+  "publicTestAssets": true,
+  "containsIdentifiablePeople": false,
+  "containsPersonalData": false,
+  "cases": [
+    {
+      "id": "A",
+      "file": "normal.mp4",
+      "expected": "PASSED"
+    },
+    {
+      "id": "B",
+      "file": "black-screen.mp4",
+      "expected": "BLACK_SCREEN"
+    },
+    {
+      "id": "C",
+      "file": "subtitle-blocking.mp4",
+      "expected": "SUBTITLE_BLOCKING_SUBJECT"
+    },
+    {
+      "id": "D",
+      "file": "audio-missing.mp4",
+      "expected": "AUDIO_MISSING"
+    }
+  ]
+}
