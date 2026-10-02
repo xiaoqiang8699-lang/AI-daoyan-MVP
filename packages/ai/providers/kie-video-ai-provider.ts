@@ -7,12 +7,13 @@ import { WorkflowError } from "../../../lib/errors";
 import { ANALYZE_REFERENCE_INSTRUCTION, analysisPrompt } from "../prompts/analyze-reference";
 import { GENERATE_PLAN_INSTRUCTION, regenerateShotPrompt, shootingPlanPrompt } from "../prompts/generate-shooting-plan";
 import { EVALUATE_TAKE_INSTRUCTION, evaluateTakePrompt } from "../prompts/evaluate-take";
+import { EVALUATE_CAPTURE_TASK_INSTRUCTION, evaluateCaptureTaskPrompt } from "../prompts/evaluate-capture-task";
 import { TRIM_TAKE_INSTRUCTION, trimTakePrompt } from "../prompts/trim-take";
 import { validatePlannedShots } from "../planned-shot-schema";
 import { parseShotPlans } from "../shot-schema";
 import { parseTakeEvaluation, takeEvaluationJsonSchema } from "../take-evaluation-schema";
 import { takeTrimJsonSchema, takeTrimSchema } from "../take-trim-schema";
-import type { AnalyzeReferenceInput, EvaluateTakeInput, GenerateShootingPlanInput, PlannedShotPlan, RegeneratePlannedShotInput, SelectTakeTrimInput, ShotPlan, TakeEvaluation, TakeTrim } from "../types";
+import type { AnalyzeReferenceInput, EvaluateTakeInput, EvaluateTaskOnlyInput, GenerateShootingPlanInput, PlannedShotPlan, RegeneratePlannedShotInput, SelectTakeTrimInput, ShotPlan, TakeEvaluation, TakeTrim } from "../types";
 import type { VideoAIProvider } from "../video-ai-provider";
 
 const kieShotPlansJsonSchema = {
@@ -293,6 +294,20 @@ export class KieVideoAIProvider implements VideoAIProvider {
       if (error instanceof WorkflowError) throw error;
       throw new WorkflowError("AI_UNAVAILABLE", "AI 暂时没有完成这次检查，请稍后重新检查。", 502, { cause: error });
     }
+  }
+
+  async evaluateTaskOnly(input: EvaluateTaskOnlyInput): Promise<TakeEvaluation> {
+    try {
+      const uploaded = await this.uploadLocalFile(input.take.localFilePath, input.take.mimeType, "ai-director/evaluation/capture-tasks");
+      const response = await this.post(`https://api.kie.ai/${this.config.model}-openai/v1/chat/completions`, JSON.stringify({ model: this.config.model, stream: false,
+        messages: [{ role: "system", content: EVALUATE_CAPTURE_TASK_INSTRUCTION }, { role: "user", content: [{ type: "text", text: evaluateCaptureTaskPrompt(input) }, { type: "text", text: "需要评价的真实用户 Take。" }, { type: "image_url", image_url: { url: uploaded.url } }] }],
+        response_format: { type: "json_schema", json_schema: { name: "capture_task_evaluation", strict: true, schema: takeEvaluationJsonSchema } },
+      }), true, 2);
+      const content = response.choices?.[0]?.message?.content;
+      if (typeof content !== "string") throw new WorkflowError("AI_PARSE_FAILED", "AI 没有返回可用的拍摄任务检查结果。", 422);
+      const result = parseTakeEvaluation(JSON.parse(content));
+      return { ...result, providerMetadata: { uploads: [{ role: "USER_TAKE", ...uploaded, deletionStatus: "NOT_SUPPORTED" }] } };
+    } catch (error) { if (error instanceof WorkflowError) throw error; throw new WorkflowError("AI_UNAVAILABLE", "AI 暂时没有完成这次检查，请稍后重试。", 502, { cause: error }); }
   }
 
   async selectTakeTrim(input: SelectTakeTrimInput): Promise<TakeTrim> {

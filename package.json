@@ -18,6 +18,7 @@
     "worker:materials": "tsx --conditions=react-server scripts/material-analysis-worker.ts",
     "fixtures:step10b:e2e": "tsx --conditions=react-server scripts/create-step10b-e2e-fixtures.ts",
     "benchmark:step10b:worker": "tsx --conditions=react-server scripts/run-step10b-worker-e2e.ts",
+    "benchmark:event:v2": "tsx --conditions=react-server scripts/run-event-benchmark-v2.ts",
     "diagnose:material-provider": "tsx --conditions=react-server scripts/diagnose-material-provider.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

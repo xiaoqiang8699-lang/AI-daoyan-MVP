@@ -6,9 +6,20 @@ import { recordProductEvent, recordUsage } from "./analytics";
 import { AnalyticsEvent } from "./analytics-events";
 import { getMaterialAIConfig, getMaterialAIProvider } from "@/packages/ai/get-material-ai-provider";
 import { getStorageProvider } from "./storage";
+import type { CapturedAtReliability } from "@/packages/ai/material-ai-provider";
 
 const READY_THRESHOLD = 75;
-const goalText = "随便看看今天有什么能发";
+function discoveryGoalText(goal: "EXPLORE" | "PRODUCT" | "PERSONAL_IP" | "DAILY_VLOG") {
+  if (goal === "PRODUCT") return "用现有素材做一条能够完整展示画面中核心对象特点的短视频。";
+  if (goal === "PERSONAL_IP") return "用现有素材做一条能表达创作者个人视角的短视频。";
+  if (goal === "DAILY_VLOG") return "用现有素材做一条有清晰日常过程的短视频。";
+  return "随便看看今天有什么能发";
+}
+
+function capturedAtReliability(capturedAt: Date | null, source: "MEDIA_METADATA" | "USER_UPLOAD" | "UNKNOWN"): CapturedAtReliability {
+  if (!capturedAt) return "NONE";
+  return source === "MEDIA_METADATA" ? "RELIABLE" : source === "USER_UPLOAD" ? "WEAK" : "NONE";
+}
 
 export async function getMaterialBatch(id: string) {
   const batch = await db.materialBatch.findFirst({ where: { id, userId: DEMO_USER_ID }, include: { assets: { orderBy: { createdAt: "asc" }, include: { analysis: true } }, events: { include: { materials: true } }, opportunities: { include: { segments: true, missingMaterials: true }, orderBy: { createdAt: "asc" } } } });
@@ -68,7 +79,7 @@ export async function analyzeMaterialBatch(batchId: string) {
   }
 
   const refreshed = await getMaterialBatch(batchId);
-  const usable = refreshed.assets.filter((asset) => asset.analysisStatus === "ANALYZED" && asset.analysis).map((asset) => ({ assetId: asset.id, capturedAt: asset.capturedAt, analysis: { summary: asset.analysis!.summary, scene: asset.analysis!.scene, activity: asset.analysis!.activity, objects: Array.isArray(asset.analysis!.objects) ? asset.analysis!.objects.map(String) : [], topics: Array.isArray(asset.analysis!.topics) ? asset.analysis!.topics.map(String) : [], speechSummary: asset.analysis!.speechSummary, visualQuality: asset.analysis!.visualQuality, storyPotential: asset.analysis!.storyPotential, confidence: asset.analysis!.confidence } }));
+  const usable = refreshed.assets.filter((asset) => asset.analysisStatus === "ANALYZED" && asset.analysis).map((asset) => ({ assetId: asset.id, capturedAt: asset.capturedAt, capturedAtSource: asset.capturedAtSource, capturedAtReliability: capturedAtReliability(asset.capturedAt, asset.capturedAtSource), analysis: { summary: asset.analysis!.summary, scene: asset.analysis!.scene, activity: asset.analysis!.activity, objects: Array.isArray(asset.analysis!.objects) ? asset.analysis!.objects.map(String) : [], topics: Array.isArray(asset.analysis!.topics) ? asset.analysis!.topics.map(String) : [], speechSummary: asset.analysis!.speechSummary, visualQuality: asset.analysis!.visualQuality, storyPotential: asset.analysis!.storyPotential, confidence: asset.analysis!.confidence } }));
 
   if (!usable.length) {
     await db.materialBatch.update({ where: { id: batchId }, data: { status: "FAILED", errorMessage: "没有可用素材完成分析。" } });
@@ -83,21 +94,26 @@ export async function analyzeMaterialBatch(batchId: string) {
   const clustered = await provider.clusterEvents({ assets: usable });
   await recordUsage({ operation: "EVENT_CLUSTERING", provider: config.provider, model: config.model, durationMs: Date.now() - eventStarted, currencyCost: config.provider === "mock" ? 0 : null });
   const usableIds = new Set(usable.map((item) => item.assetId));
-  const claimed = new Set<string>();
-  for (const event of clustered.events) for (const id of event.assetIds) {
-    if (!usableIds.has(id) || claimed.has(id)) throw new WorkflowError("ProviderResponseInvalid", "素材 AI 返回了无效的事件关联。", 422);
-    claimed.add(id);
+  const threaded = new Set<string>();
+  for (const thread of clustered.contentThreads) for (const id of thread.assetIds) {
+    if (!usableIds.has(id) || threaded.has(id)) throw new WorkflowError("ProviderResponseInvalid", "素材 AI 返回了无效的内容线关联。", 422);
+    threaded.add(id);
   }
   const unassigned = new Set<string>();
   for (const id of clustered.unassignedAssetIds) {
-    if (!usableIds.has(id) || claimed.has(id) || unassigned.has(id)) throw new WorkflowError("ProviderResponseInvalid", "素材 AI 返回了无效的未归组关联。", 422);
+    if (!usableIds.has(id) || threaded.has(id) || unassigned.has(id)) throw new WorkflowError("ProviderResponseInvalid", "素材 AI 返回了无效的未归组关联。", 422);
     unassigned.add(id);
   }
-  if (claimed.size + unassigned.size !== usableIds.size) throw new WorkflowError("ProviderResponseInvalid", "素材 AI 必须处理每一条已分析素材。", 422);
+  if (threaded.size + unassigned.size !== usableIds.size) throw new WorkflowError("ProviderResponseInvalid", "素材 AI 必须处理每一条已分析素材。", 422);
+  const eventAssetIds = new Set<string>();
+  for (const event of clustered.events) for (const id of event.assetIds) {
+    if (!threaded.has(id) || eventAssetIds.has(id)) throw new WorkflowError("ProviderResponseInvalid", "素材 AI 返回了无效的已确认事件关联。", 422);
+    eventAssetIds.add(id);
+  }
 
-  const discoveryAssets = usable.filter((asset) => !unassigned.has(asset.assetId));
+  const discoveryAssets = usable.filter((asset) => threaded.has(asset.assetId));
   const discoveryStarted = Date.now();
-  const opportunities = await provider.discoverOpportunities({ events: clustered.events, assets: discoveryAssets.map(({ assetId, analysis }) => ({ assetId, analysis })), userGoal: goalText });
+  const opportunities = await provider.discoverOpportunities({ contentThreads: clustered.contentThreads, events: clustered.events, assets: discoveryAssets.map(({ assetId, analysis }) => ({ assetId, analysis })), userGoal: discoveryGoalText(batch.goal) });
   await recordUsage({ operation: "CONTENT_DISCOVERY", provider: config.provider, model: config.model, durationMs: Date.now() - discoveryStarted, currencyCost: config.provider === "mock" ? 0 : null });
   for (const item of opportunities) if (item.assetIds.some((id) => !usableIds.has(id) || unassigned.has(id))) throw new WorkflowError("ProviderResponseInvalid", "素材 AI 返回了无效的内容关联。", 422);
 
@@ -108,10 +124,10 @@ export async function analyzeMaterialBatch(batchId: string) {
     await tx.eventMaterial.deleteMany({ where: { event: { batchId } } });
     await tx.storyEvent.deleteMany({ where: { batchId } });
 
-    const eventAssetIds = new Map<string, Set<string>>();
+    const savedEventAssetIds = new Map<string, Set<string>>();
     for (const event of clustered.events) {
       const saved = await tx.storyEvent.create({ data: { batchId, title: event.title, summary: event.summary, confidence: event.confidence, materials: { create: event.assetIds.map((materialAssetId) => ({ materialAssetId, relevanceScore: event.confidence })) } } });
-      eventAssetIds.set(saved.id, new Set(event.assetIds));
+      savedEventAssetIds.set(saved.id, new Set(event.assetIds));
     }
     for (const item of opportunities.slice(0, 3)) {
       const analyses = usable.filter((asset) => item.assetIds.includes(asset.assetId)).map((asset) => asset.analysis);
@@ -121,7 +137,7 @@ export async function analyzeMaterialBatch(batchId: string) {
       const score = Math.round(coverage * 0.4 + narrativeCompleteness * 0.35 + visualSupport * 0.25);
       const missing = item.missing || [];
       const ready = item.assetIds.length >= 3 && !missing.length && score >= READY_THRESHOLD;
-      const storyEventId = [...eventAssetIds.entries()].find(([, ids]) => item.assetIds.every((id) => ids.has(id)))?.[0] || null;
+      const storyEventId = [...savedEventAssetIds.entries()].find(([, ids]) => item.assetIds.every((id) => ids.has(id)))?.[0] || null;
       await tx.contentOpportunity.create({ data: { batchId, storyEventId, title: item.title, contentType: item.contentType, angle: item.angle, summary: item.summary, hook: item.hook, targetDuration: item.targetDuration, sufficiencyScore: score, status: ready ? "READY" : "NEEDS_MORE_MATERIAL", reason: item.reason, segments: { create: item.assetIds.map((materialAssetId, index) => ({ order: index + 1, materialAssetId, role: index === 0 ? "HOOK" : "DETAIL", description: "使用该素材支撑当前内容结构。" })) }, missingMaterials: { create: missing.map((value, index) => ({ order: index + 1, ...value, required: true })) } } });
     }
   });

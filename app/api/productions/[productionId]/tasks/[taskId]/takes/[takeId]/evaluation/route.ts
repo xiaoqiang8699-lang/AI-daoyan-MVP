@@ -1,0 +1,4 @@
+import { publicError } from "@/lib/errors";
+import { requireSameOrigin } from "@/lib/request-security";
+import { acceptCaptureTaskTake, evaluateCaptureTaskTake } from "@/lib/capture-tasks";
+export async function POST(request: Request, { params }: { params: Promise<{ productionId: string; taskId: string; takeId: string }> }) { try { requireSameOrigin(request); const { productionId, taskId, takeId } = await params; const body = await request.json().catch(() => ({})); if (body.action === "accept") return Response.json(await acceptCaptureTaskTake(productionId, taskId, takeId)); return Response.json(await evaluateCaptureTaskTake(productionId, taskId, takeId)); } catch (error) { const failure = publicError(error); return Response.json({ error: failure.error, code: failure.code }, { status: failure.status }); } }

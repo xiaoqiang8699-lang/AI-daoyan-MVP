@@ -206,6 +206,20 @@ enum DiscoveryGoal {
   PERSONAL_IP
   DAILY_VLOG
 }
+enum ProductionPlanStatus {
+  ACTIVE
+  MATERIALS_READY
+  OUTDATED
+}
+enum CaptureTaskSourceType {
+  REFERENCE_PLANNED_SHOT
+  OPPORTUNITY_MISSING_MATERIAL
+}
+enum CaptureTaskStatus {
+  NOT_STARTED
+  CAPTURED
+  SKIPPED
+}
 
 model User {
   id        String    @id @default(cuid())
@@ -324,7 +338,43 @@ model ContentOpportunity {
   storyEvent StoryEvent? @relation(fields: [storyEventId], references: [id], onDelete: SetNull)
   segments OpportunitySegment[]
   missingMaterials MissingMaterialRequest[]
+  productionPlan ProductionPlan?
   @@index([batchId, status])
+}
+model ProductionPlan {
+  id String @id @default(cuid())
+  opportunityId String @unique
+  title String
+  angle String
+  hook String
+  targetDuration Float
+  status ProductionPlanStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  opportunity ContentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  captureTasks CaptureTask[]
+}
+model CaptureTask {
+  id String @id @default(cuid())
+  productionPlanId String
+  sourceType CaptureTaskSourceType
+  sourceId String
+  order Int
+  purpose String
+  actionInstruction String
+  cameraInstruction String
+  targetDuration Float
+  referenceImageUrl String?
+  referenceVideoUrl String?
+  status CaptureTaskStatus @default(NOT_STARTED)
+  selectedTakeId String? @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  productionPlan ProductionPlan @relation(fields: [productionPlanId], references: [id], onDelete: Cascade)
+  takes Take[] @relation("CaptureTaskTakes")
+  selectedTake Take? @relation("SelectedCaptureTaskTake", fields: [selectedTakeId], references: [id], onDelete: SetNull)
+  @@unique([productionPlanId, order])
+  @@index([productionPlanId, status])
 }
 model OpportunitySegment {
   id String @id @default(cuid())
@@ -562,7 +612,8 @@ model PlannedShot {
 
 model Take {
   id               String               @id @default(cuid())
-  plannedShotId    String
+  plannedShotId    String?
+  captureTaskId    String?
   videoUrl         String
   duration         Float
   width            Int
@@ -572,12 +623,15 @@ model Take {
   status           TakeStatus           @default(UPLOADED)
   acceptanceStatus TakeAcceptanceStatus @default(NOT_ACCEPTED)
   createdAt        DateTime             @default(now())
-  plannedShot      PlannedShot          @relation("PlannedShotTakes", fields: [plannedShotId], references: [id], onDelete: Cascade)
+  plannedShot      PlannedShot?         @relation("PlannedShotTakes", fields: [plannedShotId], references: [id], onDelete: Cascade)
+  captureTask      CaptureTask?         @relation("CaptureTaskTakes", fields: [captureTaskId], references: [id], onDelete: Cascade)
   selectedBy       PlannedShot?         @relation("SelectedPlannedShotTake")
+  selectedByTask   CaptureTask?         @relation("SelectedCaptureTaskTake")
   evaluation       Evaluation?
   trimDecision     TrimDecision?
 
   @@index([plannedShotId, createdAt])
+  @@index([captureTaskId, createdAt])
 }
 
 model TrimDecision {

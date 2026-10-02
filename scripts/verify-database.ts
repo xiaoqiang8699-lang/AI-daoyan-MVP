@@ -34,7 +34,7 @@ async function main() {
       await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT invalid_score");
     }
     await tx.evaluation.create({ data: { takeId: take.id, passed: true, score: 86, advice: "这条可以使用。", rawResult: { passed: true, score: 86 } } });
-    await tx.plannedShot.update({ where: { id: take.plannedShotId }, data: { selectedTakeId: take.id, captureStatus: "CAPTURED" } });
+    await tx.plannedShot.update({ where: { id: take.plannedShotId! }, data: { selectedTakeId: take.id, captureStatus: "CAPTURED" } });
     throw rollback;
   }), (error) => error === rollback);
   console.log("数据库验证通过：示例项目、五镜头、参考视频唯一性、镜头排序唯一性、评分范围和 PlannedShot 素材关系。");

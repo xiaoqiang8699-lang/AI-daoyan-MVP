@@ -102,6 +102,11 @@ export interface EvaluateTakeInput {
   };
   deterministicChecks: DeterministicTakeChecks;
 }
+export interface EvaluateTaskOnlyInput {
+  captureTask: { purpose: string; actionInstruction: string; cameraInstruction: string; targetDuration: number };
+  take: { videoUrl: string; localFilePath: string; mimeType: string; duration: number; width: number; height: number };
+  deterministicChecks: Omit<DeterministicTakeChecks, "referenceOrientation" | "orientationMatch">;
+}
 
 export interface TakeEvaluation {
   passed: boolean;

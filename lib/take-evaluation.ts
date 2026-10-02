@@ -42,6 +42,7 @@ async function ownedTake(projectId: string, takeId: string) {
     },
   });
   if (!take) throw new WorkflowError("TAKE_NOT_FOUND", "没有找到这条拍摄素材。", 404);
+  if (!take.plannedShot || !take.plannedShotId) throw new WorkflowError("TAKE_NOT_FOUND", "这条视频不属于参考镜头拍摄流程。", 404);
   return take;
 }
 
@@ -77,6 +78,8 @@ export type EvaluateTakeDependencies = {
 
 export async function evaluateSavedTake(projectId: string, takeId: string, retry = false, dependencies: EvaluateTakeDependencies = {}) {
   let take = await ownedTake(projectId, takeId);
+  const plannedShot = take.plannedShot;
+  if (!plannedShot) throw new WorkflowError("TAKE_NOT_FOUND", "这条视频不属于参考镜头拍摄流程。", 404);
   if (!take.evaluation) {
     await db.evaluation.create({ data: { takeId, status: "PENDING" } });
     take = await ownedTake(projectId, takeId);
@@ -100,31 +103,31 @@ export async function evaluateSavedTake(projectId: string, takeId: string, retry
     const takeFile = await storage.getLocalFile(storageKey(take.videoUrl));
     const deterministicStarted = Date.now();
     const metadata = await (dependencies.probe || probeVideo)(takeFile.path, extensionForMime(take.mimeType));
-    const referenceVideo = take.plannedShot.shootingPlan.project.referenceVideo;
+    const referenceVideo = plannedShot.shootingPlan.project.referenceVideo;
     if (!referenceVideo) throw new WorkflowError("REFERENCE_MISSING", "项目参考视频不存在，暂时无法检查这条素材。", 409);
-    const checks = deterministicTakeChecks({ take: metadata, targetDuration: take.plannedShot.targetDuration, referenceVideo });
+    const checks = deterministicTakeChecks({ take: metadata, targetDuration: plannedShot.targetDuration, referenceVideo });
     const clip = await referenceClip({
       projectId,
-      referenceShotId: take.plannedShot.referenceShotId,
-      startTime: take.plannedShot.referenceShot.startTime,
-      endTime: take.plannedShot.referenceShot.endTime,
+      referenceShotId: plannedShot.referenceShotId,
+      startTime: plannedShot.referenceShot.startTime,
+      endTime: plannedShot.referenceShot.endTime,
       referenceVideoUrl: referenceVideo.fileUrl,
     }, storage, dependencies.extractClip || extractReferenceClip);
     const deterministicMs = Date.now() - deterministicStarted;
     const providerStarted = Date.now();
     const modelResult = await (dependencies.provider || getTakeEvaluationProvider()).evaluateTake({
       referenceShot: {
-        visualDescription: take.plannedShot.referenceShot.visualDescription,
-        shotSize: take.plannedShot.referenceShot.shotSize,
-        cameraMovement: take.plannedShot.referenceShot.cameraMovement,
-        targetDuration: take.plannedShot.referenceShot.targetDuration,
+        visualDescription: plannedShot.referenceShot.visualDescription,
+        shotSize: plannedShot.referenceShot.shotSize,
+        cameraMovement: plannedShot.referenceShot.cameraMovement,
+        targetDuration: plannedShot.referenceShot.targetDuration,
       },
       plannedShot: {
-        purpose: take.plannedShot.purpose,
-        actionInstruction: take.plannedShot.actionInstruction,
-        cameraInstruction: take.plannedShot.cameraInstruction,
-        dialogue: take.plannedShot.dialogue,
-        targetDuration: take.plannedShot.targetDuration,
+        purpose: plannedShot.purpose,
+        actionInstruction: plannedShot.actionInstruction,
+        cameraInstruction: plannedShot.cameraInstruction,
+        dialogue: plannedShot.dialogue,
+        targetDuration: plannedShot.targetDuration,
       },
       take: {
         videoUrl: take.videoUrl,
@@ -172,7 +175,7 @@ export async function evaluateSavedTake(projectId: string, takeId: string, retry
         status: result.passed ? "PASSED" : "REJECTED",
         acceptanceStatus: result.passed ? "AI_PASSED" : take.acceptanceStatus === "USER_ACCEPTED" ? "USER_ACCEPTED" : "NOT_ACCEPTED",
       } });
-      if (result.passed) await tx.plannedShot.update({ where: { id: take.plannedShotId }, data: { selectedTakeId: takeId, captureStatus: "CAPTURED" } });
+      if (result.passed) await tx.plannedShot.update({ where: { id: take.plannedShotId! }, data: { selectedTakeId: takeId, captureStatus: "CAPTURED" } });
       return updated;
     });
     logEvent("take.evaluation_success", { projectId, plannedShotId: take.plannedShotId, takeId, ...config, status, confidence: result.confidence, durationMs: totalMs, deterministicMs, aiMs });
@@ -194,7 +197,7 @@ export async function acceptTakeDespiteEvaluation(projectId: string, takeId: str
   if (take.evaluation?.status === "EVALUATING") throw new WorkflowError("EVALUATION_BUSY", "这条素材仍在检查中，请稍候。", 409);
   await db.$transaction([
     db.take.update({ where: { id: takeId }, data: { acceptanceStatus: "USER_ACCEPTED" } }),
-    db.plannedShot.update({ where: { id: take.plannedShotId }, data: { selectedTakeId: takeId, captureStatus: "CAPTURED" } }),
+    db.plannedShot.update({ where: { id: take.plannedShotId! }, data: { selectedTakeId: takeId, captureStatus: "CAPTURED" } }),
   ]);
   return { takeId, acceptanceStatus: "USER_ACCEPTED" as const, selectedTakeId: takeId };
 }

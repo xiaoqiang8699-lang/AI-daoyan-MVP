@@ -1,4 +1,4 @@
-import type { AnalyzeReferenceInput, EvaluateTakeInput, GenerateShootingPlanInput, PlannedShotPlan, RegeneratePlannedShotInput, ShotPlan, TakeEvaluation } from "../types";
+import type { AnalyzeReferenceInput, EvaluateTakeInput, EvaluateTaskOnlyInput, GenerateShootingPlanInput, PlannedShotPlan, RegeneratePlannedShotInput, ShotPlan, TakeEvaluation } from "../types";
 import type { VideoAIProvider } from "../video-ai-provider";
 
 export class MockVideoAIProvider implements VideoAIProvider {
@@ -75,4 +75,5 @@ export class MockVideoAIProvider implements VideoAIProvider {
       issueEndTime: null,
     };
   }
+  async evaluateTaskOnly(input: EvaluateTaskOnlyInput): Promise<TakeEvaluation> { return this.evaluateTake({ referenceShot: { visualDescription: input.captureTask.purpose, shotSize: "未指定", cameraMovement: "未指定", targetDuration: input.captureTask.targetDuration }, plannedShot: { ...input.captureTask, dialogue: null }, take: input.take, referenceClip: { localFilePath: input.take.localFilePath, mimeType: "video/mp4" }, deterministicChecks: { ...input.deterministicChecks, referenceOrientation: "UNKNOWN", orientationMatch: null } }); }
 }

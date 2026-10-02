@@ -51,7 +51,7 @@ type CaptureShot = {
   selectedTake: TakeView | null;
   takeCount: number;
   takes: TakeView[];
-  reference: { frameUrl: string; startTime: number; endTime: number };
+  reference?: { frameUrl: string; startTime: number; endTime: number };
 };
 
 const MIME_CANDIDATES = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
@@ -67,14 +67,15 @@ function extensionForMime(mime: string) {
   return base === "video/mp4" ? "mp4" : base === "video/quicktime" ? "mov" : "webm";
 }
 
-export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShotId, referenceVideo, debugEvaluation }: {
+export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShotId, referenceVideo, debugEvaluation, taskMode }: {
   projectId: string;
   shot: CaptureShot;
   allShots: { id: string; order: number; captureStatus: CaptureStatus }[];
   shotIndex: number;
   nextShotId: string | null;
-  referenceVideo: { url: string; orientation: "portrait" | "landscape" | "unknown" };
+  referenceVideo?: { url: string; orientation: "portrait" | "landscape" | "unknown" };
   debugEvaluation: boolean;
+  taskMode?: { productionId: string; nextTaskId: string | null };
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("PREPARE");
@@ -185,14 +186,14 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
     await openCamera(next);
   }
 
-  function supportedMime() {
-    return MIME_CANDIDATES.find((type) => MediaRecorder.isTypeSupported(type)) || null;
+  function supportedMimes() {
+    return MIME_CANDIDATES.filter((type) => MediaRecorder.isTypeSupported(type));
   }
 
   async function startRecording() {
     const stream = streamRef.current;
-    const mimeType = supportedMime();
-    if (!stream || !mimeType) {
+    const mimeTypes = supportedMimes();
+    if (!stream || !mimeTypes.length) {
       setError("当前浏览器没有可用的录制格式，请从手机相册选择视频。");
       releaseCamera();
       setPhase("PREPARE");
@@ -208,7 +209,13 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
     setCountdown(null);
     if (attempt !== cameraAttemptRef.current || !streamRef.current) return;
     try {
-      const recorder = new MediaRecorder(stream, { mimeType });
+      let recorder: MediaRecorder | null = null;
+      let mimeType = "";
+      for (const candidate of mimeTypes) {
+        try { recorder = new MediaRecorder(stream, { mimeType: candidate }); mimeType = candidate; break; }
+        catch { /* Safari may advertise a MIME that it cannot construct. Try the next runtime-supported option. */ }
+      }
+      if (!recorder) throw new Error("没有可用录制器");
       recorderRef.current = recorder;
       recordingFailedRef.current = false;
       chunksRef.current = [];
@@ -237,7 +244,7 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
         setPhase("REVIEW");
       };
       startedAtRef.current = performance.now();
-      recorder.start(250);
+      recorder.start();
       setElapsed(0);
       setPhase("RECORDING");
       tickRef.current = setInterval(() => setElapsed((performance.now() - startedAtRef.current) / 1000), 100);
@@ -250,7 +257,10 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
   }
 
   function stopRecording() {
-    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+    if (recorderRef.current?.state === "recording") {
+      try { recorderRef.current.requestData(); } catch { /* Some Safari versions only emit data at stop. */ }
+      recorderRef.current.stop();
+    }
   }
 
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
@@ -287,10 +297,10 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
     setError(null);
     try {
       for (let attempt = 0; attempt < 200; attempt += 1) {
-        const response = await fetch(`/api/projects/${projectId}/take-evaluations/${take.id}`, {
+        const response = await fetch(taskMode ? `/api/productions/${taskMode.productionId}/tasks/${shot.id}/takes/${take.id}/evaluation` : `/api/projects/${projectId}/take-evaluations/${take.id}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ retry: retry && attempt === 0 }),
+          body: JSON.stringify(taskMode ? {} : { retry: retry && attempt === 0 }),
         });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || "这次没有成功检查，请重新检查。");
@@ -298,7 +308,7 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
           await new Promise((resolve) => setTimeout(resolve, 1500));
           continue;
         }
-        const result = body.evaluation as EvaluationView;
+        const result = (body.evaluation || body) as EvaluationView;
         const updated = { ...take, evaluation: result, acceptanceStatus: result.status === "PASSED" ? "AI_PASSED" as const : take.acceptanceStatus };
         setEvaluation(result);
         setEvaluationTake(updated);
@@ -328,8 +338,8 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
     setUploading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/projects/${projectId}/take-evaluations/${evaluationTake.id}`, {
-        method: "PATCH",
+      const response = await fetch(taskMode ? `/api/productions/${taskMode.productionId}/tasks/${shot.id}/takes/${evaluationTake.id}/evaluation` : `/api/projects/${projectId}/take-evaluations/${evaluationTake.id}`, {
+        method: taskMode ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "accept" }),
       });
@@ -358,7 +368,7 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
     setUploading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/projects/${projectId}/takes/${shot.id}`, {
+      const response = await fetch(taskMode ? `/api/productions/${taskMode.productionId}/tasks/${shot.id}/takes` : `/api/projects/${projectId}/takes/${shot.id}`, {
         method: "POST",
         headers: {
           "Content-Type": clip.blob.type || "application/octet-stream",
@@ -386,7 +396,7 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
   async function skipShot() {
     setError(null);
     try {
-      const response = await fetch(`/api/projects/${projectId}/takes/${shot.id}`, {
+      const response = await fetch(taskMode ? `/api/productions/${taskMode.productionId}/tasks/${shot.id}/takes` : `/api/projects/${projectId}/takes/${shot.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "skip" }),
@@ -394,16 +404,17 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "暂时无法跳过这一镜。");
       setStatusById((statuses) => ({ ...statuses, [shot.id]: "SKIPPED" }));
-      if (nextShotId) router.push(`/projects/${projectId}/shoot/${nextShotId}`);
+      if (taskMode) router.push(taskMode.nextTaskId ? `/workspace/produce/${taskMode.productionId}/shoot/${taskMode.nextTaskId}` : `/workspace/produce/${taskMode.productionId}`);
+      else if (nextShotId) router.push(`/projects/${projectId}/shoot/${nextShotId}`);
       else router.push(`/projects/${projectId}/plan`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "暂时无法跳过这一镜。");
     }
   }
 
-  const nextHref = nextShotId ? `/projects/${projectId}/shoot/${nextShotId}` : `/projects/${projectId}/plan`;
-  const orientationText = referenceVideo.orientation === "landscape" ? "参考视频是横屏，建议横着手机拍。"
-    : referenceVideo.orientation === "portrait" ? "参考视频是竖屏，建议竖着手机拍。" : null;
+  const nextHref = taskMode ? taskMode.nextTaskId ? `/workspace/produce/${taskMode.productionId}/shoot/${taskMode.nextTaskId}` : `/workspace/produce/${taskMode.productionId}` : nextShotId ? `/projects/${projectId}/shoot/${nextShotId}` : `/projects/${projectId}/plan`;
+  const orientationText = referenceVideo?.orientation === "landscape" ? "参考视频是横屏，建议横着手机拍。"
+    : referenceVideo?.orientation === "portrait" ? "参考视频是竖屏，建议竖着手机拍。" : null;
 
   if (phase === "CAMERA_READY" || phase === "RECORDING") return <div className="fixed inset-0 z-50 flex min-h-svh flex-col bg-black text-white">
     <div className="relative flex-1 overflow-hidden">
@@ -418,12 +429,12 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
       {phase === "RECORDING" && <div className="absolute inset-x-0 bottom-28 text-center"><span className="rounded-full bg-black/60 px-4 py-2 font-mono text-lg"><span className="mr-2 inline-block size-2 rounded-full bg-red-500" />{formatTime(elapsed)}</span>{elapsed >= shot.targetDuration && <p className="mt-3 text-sm text-emerald-300">✓ 已达到建议时长</p>}</div>}
     </div>
     <div className="grid grid-cols-3 items-center bg-black px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
-      <button type="button" className="flex flex-col items-center gap-1 text-xs" onClick={() => setShowReference(true)}><Images className="size-5" />参考</button>
+      {shot.reference && referenceVideo ? <button type="button" className="flex flex-col items-center gap-1 text-xs" onClick={() => setShowReference(true)}><Images className="size-5" />参考</button> : <span />}
       {phase === "RECORDING" ? <button type="button" onClick={stopRecording} className="mx-auto grid size-20 place-items-center rounded-full border-4 border-white bg-white/20" aria-label="停止录制"><span className="size-8 rounded-md bg-red-500" /></button>
         : <button type="button" disabled={countdown !== null} onClick={() => void startRecording()} className="mx-auto grid size-20 place-items-center rounded-full border-4 border-white bg-white/20 disabled:opacity-50" aria-label="开始录制"><span className="size-14 rounded-full bg-red-500" /></button>}
       <button type="button" disabled={phase === "RECORDING" || countdown !== null} className="flex flex-col items-center gap-1 text-xs disabled:opacity-40" onClick={() => void switchCamera()}><SwitchCamera className="size-5" />切换镜头</button>
     </div>
-    {showReference && <ReferenceClip url={referenceVideo.url} start={shot.reference.startTime} end={shot.reference.endTime} onClose={() => setShowReference(false)} />}
+    {showReference && shot.reference && referenceVideo && <ReferenceClip url={referenceVideo.url} start={shot.reference.startTime} end={shot.reference.endTime} onClose={() => setShowReference(false)} />}
   </div>;
 
   return <div className="mx-auto max-w-xl pb-8">
@@ -465,7 +476,7 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
       {clip.duration !== null && clip.duration > 30.05 && <p className="mb-3 rounded-xl bg-red-50 p-3 text-center text-sm text-red-700">单镜视频超过 30 秒，请重拍或选择更短的视频。</p>}
       <div className="grid grid-cols-2 gap-3"><Button variant="outline" disabled={uploading} onClick={() => void retake()}><RotateCcw />重拍</Button><Button disabled={uploading || clip.duration === null || clip.duration > 30.05} onClick={() => void saveCurrentClip()}><Check />{uploading ? "正在保存…" : "使用这条"}</Button></div>
     </section> : <section>
-      <div className="relative overflow-hidden rounded-3xl bg-muted"><Image src={shot.reference.frameUrl} width={720} height={450} alt={`镜头 ${shot.order} 参考画面`} priority className="aspect-[16/10] w-full object-cover" /><button type="button" onClick={() => setShowReference(true)} className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-sm text-white"><Video className="size-4" />看参考片段</button></div>
+      {shot.reference ? <div className="relative overflow-hidden rounded-3xl bg-muted"><Image src={shot.reference.frameUrl} width={720} height={450} alt={`镜头 ${shot.order} 参考画面`} priority className="aspect-[16/10] w-full object-cover" /><button type="button" onClick={() => setShowReference(true)} className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-sm text-white"><Video className="size-4" />看参考片段</button></div> : null}
       {orientationText && <p className="mt-3 text-center text-xs text-muted-foreground">{orientationText}</p>}
       <div className="mt-6 space-y-5 rounded-3xl bg-white p-5 shadow-sm">
         <Instruction title="这一镜的作用" text={shot.purpose} />
@@ -481,7 +492,7 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
     </section>}
 
     {error && (phase === "REVIEW" || saved) && <p role="alert" className="mt-4 rounded-2xl bg-red-50 p-4 text-sm leading-6 text-red-700">{error}</p>}
-    {showReference && <ReferenceClip url={referenceVideo.url} start={shot.reference.startTime} end={shot.reference.endTime} onClose={() => setShowReference(false)} />}
+    {showReference && shot.reference && referenceVideo && <ReferenceClip url={referenceVideo.url} start={shot.reference.startTime} end={shot.reference.endTime} onClose={() => setShowReference(false)} />}
     {showShots && <ShotList projectId={projectId} shots={allShots} currentId={shot.id} statuses={statusById} onClose={() => setShowShots(false)} />}
     {showHistory && <TakeHistory takes={takeHistory} selectedTakeId={selectedTake?.id || null} onClose={() => setShowHistory(false)} />}
   </div>;
