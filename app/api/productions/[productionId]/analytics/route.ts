@@ -1,0 +1,5 @@
+import { publicError } from "@/lib/errors";
+import { recordProductEvent } from "@/lib/analytics";
+import { AnalyticsEvent } from "@/lib/analytics-events";
+import { requireSameOrigin } from "@/lib/request-security";
+export async function POST(request: Request, { params }: { params: Promise<{ productionId: string }> }) { try { requireSameOrigin(request); const { eventName } = await request.json() as { eventName?: string }; if (eventName !== "CONTENT_FINAL_VIDEO_VIEWED" && eventName !== "CONTENT_FINAL_VIDEO_DOWNLOADED") return Response.json({ error: "事件无效。" }, { status: 422 }); await recordProductEvent({ eventName: eventName === "CONTENT_FINAL_VIDEO_VIEWED" ? AnalyticsEvent.CONTENT_FINAL_VIDEO_VIEWED : AnalyticsEvent.CONTENT_FINAL_VIDEO_DOWNLOADED, eventData: { productionPlanId: (await params).productionId } }); return Response.json({ ok: true }); } catch (error) { const failure = publicError(error); return Response.json({ error: failure.error, code: failure.code }, { status: failure.status }); } }

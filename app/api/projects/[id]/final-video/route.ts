@@ -18,7 +18,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     requireSameOrigin(request);
     const reservation = await reserveFinalRender(id);
     if (!reservation.busy) await recordProductEvent({ eventName: AnalyticsEvent.FINAL_RENDER_STARTED, projectId: id });
-    if (!reservation.busy) await enqueueFinalRender({ projectId: id, finalVideoId: reservation.finalVideoId, renderToken: reservation.renderToken });
+    if (!reservation.busy) await enqueueFinalRender({ sourceType: "REFERENCE_PROJECT", projectId: id, finalVideoId: reservation.finalVideoId, renderToken: reservation.renderToken });
     return Response.json(reservation, { status: 202 });
   } catch (error) { const failure = publicError(error); return Response.json({ error: failure.error, code: failure.code }, { status: failure.status }); }
 }

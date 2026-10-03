@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRight, Camera, Check, History, Images, List, LoaderCircle, RefreshCw, RotateCcw, SwitchCamera, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { capturePhaseAfterStop, stopMediaRecorder } from "@/lib/capture-recorder";
 
 type CaptureStatus = "NOT_STARTED" | "CAPTURED" | "SKIPPED";
 type Phase = "PREPARE" | "CAMERA_READY" | "RECORDING" | "REVIEW";
@@ -103,11 +104,16 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
   const recordingFailedRef = useRef(false);
+  const stoppingRef = useRef(false);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraAttemptRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const maxDuration = Math.min(30, Math.max(shot.targetDuration + 5, 10));
+  const maxDuration = Math.max(30, shot.targetDuration * 3);
+
+  function stopDiagnostic(event: "CAPTURE_STOP_POINTER_DOWN" | "CAPTURE_STOP_CLICK" | "CAPTURE_STOP_CALLED" | "CAPTURE_ONSTOP") {
+    if (process.env.NODE_ENV !== "production") console.info(event, { captureUiState: phase, isRecording: recorderRef.current?.state === "recording", recorderState: recorderRef.current?.state || null });
+  }
 
   const progress = useMemo(() => {
     const values = Object.values(statusById);
@@ -141,8 +147,9 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
 
   useEffect(() => () => {
     clearRecordingTimers();
+    const recorder = recorderRef.current;
+    if (recorder?.state === "recording" || recorder?.state === "paused") recorder.stop();
     releaseCamera();
-    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
   }, [clearRecordingTimers, releaseCamera]);
 
   useEffect(() => {
@@ -218,6 +225,7 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
       if (!recorder) throw new Error("没有可用录制器");
       recorderRef.current = recorder;
       recordingFailedRef.current = false;
+      stoppingRef.current = false;
       chunksRef.current = [];
       recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
       recorder.onerror = () => {
@@ -228,6 +236,7 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
         setPhase("PREPARE");
       };
       recorder.onstop = () => {
+        stopDiagnostic("CAPTURE_ONSTOP");
         clearRecordingTimers();
         if (recordingFailedRef.current) return;
         const duration = Math.max(0.1, (performance.now() - startedAtRef.current) / 1000);
@@ -241,14 +250,14 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
         discardClip();
         setClip({ blob, url: URL.createObjectURL(blob), fileName: `take.${extensionForMime(blob.type)}`, duration });
         setElapsed(duration);
-        setPhase("REVIEW");
+        setPhase(capturePhaseAfterStop());
       };
       startedAtRef.current = performance.now();
       recorder.start();
       setElapsed(0);
       setPhase("RECORDING");
       tickRef.current = setInterval(() => setElapsed((performance.now() - startedAtRef.current) / 1000), 100);
-      stopRef.current = setTimeout(() => { if (recorder.state === "recording") recorder.stop(); }, maxDuration * 1000);
+      stopRef.current = setTimeout(() => { setError("已达到最长录制时间，已自动停止。"); stopRecording(); }, maxDuration * 1000);
     } catch {
       releaseCamera();
       setError("当前浏览器无法开始录制，请从手机相册选择视频。");
@@ -257,10 +266,8 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
   }
 
   function stopRecording() {
-    if (recorderRef.current?.state === "recording") {
-      try { recorderRef.current.requestData(); } catch { /* Some Safari versions only emit data at stop. */ }
-      recorderRef.current.stop();
-    }
+    stopDiagnostic("CAPTURE_STOP_CALLED");
+    stopMediaRecorder(recorderRef.current, stoppingRef);
   }
 
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
@@ -418,7 +425,7 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
 
   if (phase === "CAMERA_READY" || phase === "RECORDING") return <div className="fixed inset-0 z-50 flex min-h-svh flex-col bg-black text-white">
     <div className="relative flex-1 overflow-hidden">
-      <video ref={previewRef} autoPlay muted playsInline className="h-full w-full object-contain" />
+      <video ref={previewRef} autoPlay muted playsInline className="pointer-events-none h-full w-full object-contain" />
       <div className="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/75 to-transparent px-4 pb-12 pt-[max(1rem,env(safe-area-inset-top))] text-sm">
         <button type="button" onClick={() => { clearRecordingTimers(); releaseCamera(); setPhase("PREPARE"); }} aria-label="退出取景"><X /></button>
         <strong>镜头 {shotIndex + 1} / {allShots.length}</strong>
@@ -428,9 +435,9 @@ export function CaptureWorkflow({ projectId, shot, allShots, shotIndex, nextShot
       {countdown !== null && <div className="absolute inset-0 grid place-items-center bg-black/20 text-8xl font-bold" aria-live="assertive">{countdown}</div>}
       {phase === "RECORDING" && <div className="absolute inset-x-0 bottom-28 text-center"><span className="rounded-full bg-black/60 px-4 py-2 font-mono text-lg"><span className="mr-2 inline-block size-2 rounded-full bg-red-500" />{formatTime(elapsed)}</span>{elapsed >= shot.targetDuration && <p className="mt-3 text-sm text-emerald-300">✓ 已达到建议时长</p>}</div>}
     </div>
-    <div className="grid grid-cols-3 items-center bg-black px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
+    <div className="relative z-20 grid touch-manipulation grid-cols-3 items-center bg-black px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
       {shot.reference && referenceVideo ? <button type="button" className="flex flex-col items-center gap-1 text-xs" onClick={() => setShowReference(true)}><Images className="size-5" />参考</button> : <span />}
-      {phase === "RECORDING" ? <button type="button" onClick={stopRecording} className="mx-auto grid size-20 place-items-center rounded-full border-4 border-white bg-white/20" aria-label="停止录制"><span className="size-8 rounded-md bg-red-500" /></button>
+      {phase === "RECORDING" ? <button type="button" onPointerDown={() => stopDiagnostic("CAPTURE_STOP_POINTER_DOWN")} onClick={() => { stopDiagnostic("CAPTURE_STOP_CLICK"); stopRecording(); }} className="pointer-events-auto mx-auto grid size-20 place-items-center rounded-full border-4 border-white bg-white/20" aria-label="停止录制"><span className="pointer-events-none size-8 rounded-md bg-red-500" /></button>
         : <button type="button" disabled={countdown !== null} onClick={() => void startRecording()} className="mx-auto grid size-20 place-items-center rounded-full border-4 border-white bg-white/20 disabled:opacity-50" aria-label="开始录制"><span className="size-14 rounded-full bg-red-500" /></button>}
       <button type="button" disabled={phase === "RECORDING" || countdown !== null} className="flex flex-col items-center gap-1 text-xs disabled:opacity-40" onClick={() => void switchCamera()}><SwitchCamera className="size-5" />切换镜头</button>
     </div>

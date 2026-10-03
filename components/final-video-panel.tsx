@@ -6,7 +6,7 @@ import { Download, Film, LoaderCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RenderSettings } from "@/components/render-settings";
 
-type View = { projectName: string; eligible: boolean; missing: Array<{ id: string; order: number }>; sourceCount: number; finalVideo: null | { status: "PENDING" | "RENDERING" | "READY" | "FAILED"; fileUrl: string | null; duration: number | null; width: number | null; height: number | null; fileSize: number | null; errorMessage: string | null; outdated: boolean } };
+type View = { projectName: string; eligible: boolean; missing: Array<{ id: string; order: number }>; sourceCount: number; finalVideo: null | { status: "PENDING" | "RENDERING" | "READY" | "FAILED" | "OUTDATED"; fileUrl: string | null; duration: number | null; width: number | null; height: number | null; fileSize: number | null; errorMessage: string | null; outdated: boolean } };
 function filename(name: string) { return `${name.replace(/[\\/:*?"<>|]/g, "-").trim() || "ai-director"}-final.mp4`; }
 
 export function FinalVideoPanel({ projectId, initial }: { projectId: string; initial: View }) {

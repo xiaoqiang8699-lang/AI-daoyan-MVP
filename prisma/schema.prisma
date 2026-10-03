@@ -35,6 +35,11 @@ enum FinalVideoStatus {
   RENDERING
   READY
   FAILED
+  OUTDATED
+}
+enum FinalVideoSourceType {
+  REFERENCE_PROJECT
+  CONTENT_PRODUCTION
 }
 
 enum SubtitleStatus {
@@ -353,6 +358,9 @@ model ProductionPlan {
   updatedAt DateTime @updatedAt
   opportunity ContentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   captureTasks CaptureTask[]
+  finalVideo FinalVideo?
+  renderSettings VideoRenderSettings?
+  subtitleTracks SubtitleTrack[]
 }
 model CaptureTask {
   id String @id @default(cuid())
@@ -685,7 +693,9 @@ model Evaluation {
 
 model FinalVideo {
   id             String           @id @default(cuid())
-  projectId      String           @unique
+  sourceType     FinalVideoSourceType @default(REFERENCE_PROJECT)
+  projectId      String?          @unique
+  productionPlanId String?        @unique
   fileUrl        String?
   storageKey     String?
   status         FinalVideoStatus @default(PENDING)
@@ -710,12 +720,14 @@ model FinalVideo {
   finalQa          FinalVideoQA?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
-  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project        Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  productionPlan ProductionPlan?  @relation(fields: [productionPlanId], references: [id], onDelete: Cascade)
 }
 
 model VideoRenderSettings {
   id                  String   @id @default(cuid())
-  projectId           String   @unique
+  projectId           String?  @unique
+  productionPlanId    String?  @unique
   subtitleEnabled     Boolean  @default(true)
   bgmEnabled          Boolean  @default(false)
   bgmTrackId          String?
@@ -724,7 +736,8 @@ model VideoRenderSettings {
   version             Int      @default(1)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
-  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project             Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  productionPlan      ProductionPlan? @relation(fields: [productionPlanId], references: [id], onDelete: Cascade)
   bgmTrack            BgmTrack? @relation(fields: [bgmTrackId], references: [id], onDelete: SetNull)
 }
 
@@ -743,7 +756,8 @@ model BgmTrack {
 
 model SubtitleTrack {
   id                      String         @id @default(cuid())
-  projectId               String
+  projectId               String?
+  productionPlanId        String?
   finalVideoId            String         @unique
   status                  SubtitleStatus @default(PENDING)
   language                String?
@@ -754,7 +768,8 @@ model SubtitleTrack {
   errorMessage            String?
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
-  project                 Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project                 Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  productionPlan          ProductionPlan? @relation(fields: [productionPlanId], references: [id], onDelete: Cascade)
   finalVideo              FinalVideo     @relation(fields: [finalVideoId], references: [id], onDelete: Cascade)
 }
 
